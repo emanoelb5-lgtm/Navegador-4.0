@@ -32,12 +32,12 @@ class BrowserSmokeTest {
             screenshot("menu")
             onView(withText("Favoritos")).perform(click())
             onView(withText("Suas páginas favoritas aparecem aqui.")).check(matches(isDisplayed()))
-            pressBack()
+            androidx.test.espresso.Espresso.pressBack()
             onView(withContentDescription("Abas")).perform(click())
             onView(withContentDescription("Nova aba")).perform(click())
             onView(withContentDescription("Abas")).perform(click())
             onView(withText("Suas abas · 2")).check(matches(isDisplayed()))
-            pressBack(); screenshot("home")
+            androidx.test.espresso.Espresso.pressBack(); screenshot("home")
         }
     }
     @Test fun blockedSchemesCannotLeaveTheAddressBar() {
@@ -78,7 +78,7 @@ class BrowserSmokeTest {
                 onView(withContentDescription("Menu")).perform(click())
                 onView(withText("Favoritos")).perform(click())
                 onView(withText("Página B")).check(matches(isDisplayed()))
-                pressBack()
+                androidx.test.espresso.Espresso.pressBack()
                 onView(withContentDescription("Voltar")).perform(click())
                 onWebView(withId(R.id.browser_view)).withElement(findElement(Locator.ID, "headline")).check(webMatches(getText(), equalTo("Página de teste")))
             }

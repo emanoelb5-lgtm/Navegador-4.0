@@ -54,10 +54,10 @@ import java.util.UUID
 class BrowserActivity : AppCompatActivity() {
     private data class Tab(
         val id: Long, var url: String? = null, var title: String = "Nova aba",
-        val private: Boolean = false, var desktop: Boolean = false,
+        val incognito: Boolean = false, var desktop: Boolean = false,
         var home: Boolean = url == null, var web: WebView? = null,
         var state: Bundle? = null, var used: Long = System.currentTimeMillis(),
-        var protectedInMemory: Boolean = true
+        var protectedInMemory: Boolean = true, var tlsFailed: Boolean = false, var committed: Boolean = false
     )
     private val tabs = mutableListOf<Tab>()
     private var activeId = 0L
@@ -155,7 +155,7 @@ class BrowserActivity : AppCompatActivity() {
                     current.home && current.web != null -> { current.home = false; showCurrent() }
                     current.web?.canGoBack() == true && !current.home -> current.web?.goBack()
                     !current.home -> goHome()
-                    current.private -> closeTab(current)
+                    current.incognito -> closeTab(current)
                     else -> finish()
                 }
             }
@@ -190,7 +190,7 @@ class BrowserActivity : AppCompatActivity() {
         val addressRow = row().apply { background = rounded(soft, 16); minimumHeight = dp(50); setPadding(dp(12), 0, dp(12), 0); contentDescription = "Endereço e pesquisa"; clickable { editAddress() } }
         addressIcon = FrameLayout(this)
         addressRow.addView(addressIcon, LinearLayout.LayoutParams(dp(22), dp(22)))
-        address = text("Pesquisar ou digitar endereço", 14, ink).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        address = text("Pesquisar ou digitar endereço", 14, ink).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.MIDDLE }
         addressRow.addView(address, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10); marginEnd = dp(6) })
         addressRow.addView(icon("search", 18, muted), LinearLayout.LayoutParams(dp(18), dp(18)))
         chrome.addView(addressRow)
@@ -223,7 +223,7 @@ class BrowserActivity : AppCompatActivity() {
         pageHost.removeAllViews()
         val tab = current
         tab.used = System.currentTimeMillis()
-        if (tab.home) pageHost.addView(homeView(tab.private)) else {
+        if (tab.home) pageHost.addView(homeView(tab.incognito)) else {
             val web = tab.web ?: createWebView(tab) ?: return
             (web.parent as? ViewGroup)?.removeView(web)
             pageHost.addView(web, FrameLayout.LayoutParams(-1, -1))
@@ -232,21 +232,21 @@ class BrowserActivity : AppCompatActivity() {
         updateChrome(); persist()
     }
 
-    private fun homeView(private: Boolean): View {
+    private fun homeView(incognito: Boolean): View {
         val scroll = ScrollView(this).apply { id = R.id.home_screen; isFillViewport = true; clipToPadding = false }
         val content = column().apply { setPadding(dp(24), dp(28), dp(24), dp(32)) }
         val brand = row()
-        brand.addView(icon(if (private) "private" else "compass", 32, accent), LinearLayout.LayoutParams(dp(32), dp(32)))
+        brand.addView(icon(if (incognito) "private" else "compass", 32, accent), LinearLayout.LayoutParams(dp(32), dp(32)))
         brand.addView(text("Navegador 4.0", 17, ink, true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
         content.addView(brand)
-        content.addView(text(if (private) "UM ESPAÇO SÓ SEU" else "SEU ESPAÇO NA WEB", 11, accent, true).apply { letterSpacing = .12f }, margins(34, 16))
-        content.addView(text(if (private) "Navegue com\nmais privacidade." else "Por onde vamos\ncomeçar?", 34, ink, true).apply { setLineSpacing(0f, 1.03f) })
-        content.addView(text(if (private) "As abas privadas usam cookies e dados separados. Ao fechar todas elas, os dados dessa sessão são apagados. Sites e sua rede ainda podem identificar sua conexão." else "Uma página limpa para suas próximas descobertas.", 15, muted), margins(16, 22))
+        content.addView(text(if (incognito) "UM ESPAÇO SÓ SEU" else "SEU ESPAÇO NA WEB", 11, accent, true).apply { letterSpacing = .12f }, margins(34, 16))
+        content.addView(text(if (incognito) "Navegue com\nmais privacidade." else "Por onde vamos\ncomeçar?", 34, ink, true).apply { setLineSpacing(0f, 1.03f) })
+        content.addView(text(if (incognito) "As abas privadas usam cookies e dados separados. Ao fechar todas elas, os dados dessa sessão são apagados. Sites e sua rede ainda podem identificar sua conexão." else "Uma página limpa para suas próximas descobertas.", 15, muted), margins(16, 22))
         val search = row().apply { minimumHeight = dp(56); background = rounded(paper, 18); setPadding(dp(16), 0, dp(16), 0); clickable { editAddress() }; contentDescription = "Iniciar pesquisa" }
         search.addView(icon("search", 22, accent), LinearLayout.LayoutParams(dp(22), dp(22)))
         search.addView(text("Pesquisar na internet", 15, muted), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
         content.addView(search)
-        if (!private) {
+        if (!incognito) {
             content.addView(text("Seus atalhos", 16, ink, true), margins(30, 10))
             val defaults = listOf(PageRecord("Google", "https://www.google.com"), PageRecord("YouTube", "https://www.youtube.com"), PageRecord("Wikipédia", "https://pt.wikipedia.org"))
             val shortcuts = (store.pages("bookmarks") + defaults).distinctBy { it.url }.take(6)
@@ -267,14 +267,14 @@ class BrowserActivity : AppCompatActivity() {
         scroll.addView(content); return scroll
     }
 
-    private fun goHome() { cancelRequests(); current.web?.onPause(); current.home = true; sheet?.dismiss(); showCurrent() }
-    private fun newTab(url: String? = null, private: Boolean = false): Tab? {
+    private fun goHome() { cancelRequests(); current.web?.stopLoading(); current.web?.onPause(); current.home = true; sheet?.dismiss(); showCurrent() }
+    private fun newTab(url: String? = null, incognito: Boolean = false): Tab? {
         if (clearing) return null
         if (tabs.size >= 30) { toast("Feche uma aba antes de abrir outra. Limite: 30 abas."); return null }
-        if (private && !privateSupported()) { dialog("Atualize o motor", "A navegação privada exige isolamento de perfis e exclusão completa dos dados. Atualize o Android System WebView para habilitá-la.").setPositiveButton("Atualizar") { _, _ -> updateEngine() }.show(); return null }
+        if (incognito && !privateSupported()) { dialog("Atualize o motor", "A navegação privada exige isolamento de perfis e exclusão completa dos dados. Atualize o Android System WebView para habilitá-la.").setPositiveButton("Atualizar") { _, _ -> updateEngine() }.show(); return null }
         if (tabs.isNotEmpty()) protectAndPause(current)
         cancelRequests()
-        val tab = Tab(nextId++, url, private = private)
+        val tab = Tab(nextId++, url, incognito = incognito)
         tabs += tab; activeId = tab.id
         sheet?.dismiss(); showCurrent(); trimTabs()
         return tab
@@ -287,9 +287,9 @@ class BrowserActivity : AppCompatActivity() {
         if (clearing) return
         if (tab.id == activeId) cancelRequests()
         val index = tabs.indexOf(tab)
-        val closingStorage = if (tab.private && tabs.count { it.private } == 1) privateStorage else null
+        val closingStorage = if (tab.incognito && tabs.count { it.incognito } == 1) privateStorage else null
         destroy(tab); tabs.remove(tab)
-        if (tab.private && tabs.none { it.private }) {
+        if (tab.incognito && tabs.none { it.incognito }) {
             privateProfile = null; privateStorage = null
             closingStorage?.let { WebStorageCompat.deleteBrowsingData(it) {} }
         }
@@ -298,7 +298,7 @@ class BrowserActivity : AppCompatActivity() {
         showCurrent(); showTabs()
     }
     private fun persist() {
-        val regular = tabs.filterNot { it.private }
+        val regular = tabs.filterNot { it.incognito }
         val active = regular.firstOrNull { it.id == activeId }?.id ?: regular.firstOrNull()?.id ?: 0
         store.saveTabs(regular.map { SavedTab(it.id, it.title.take(300), if (it.home) null else it.url, it.desktop) }, active)
     }
@@ -316,7 +316,7 @@ class BrowserActivity : AppCompatActivity() {
         sheet?.dismiss()
         val input = EditText(this).apply {
             id = R.id.address_input; setSingleLine(); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            imeOptions = EditorInfo.IME_ACTION_GO; textSize = 16f
+            imeOptions = EditorInfo.IME_ACTION_GO or (if (current.incognito) EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING else 0); textSize = 16f
             hint = "Pesquisar ou digitar endereço"; setText(if (current.home) "" else current.url.orEmpty()); selectAll()
         }
         val frame = FrameLayout(this).apply { setPadding(dp(20), dp(6), dp(20), 0); addView(input) }
@@ -339,14 +339,15 @@ class BrowserActivity : AppCompatActivity() {
         if (!engineAvailable) { showEngineError(); return null }
         return runCatching {
             val web = WebView(this)
-            if (tab.private) {
+            tab.web = web
+            if (tab.incognito) {
                 val name = privateProfile ?: "private_${UUID.randomUUID()}".also { privateProfile = it }
                 WebViewCompat.setProfile(web, name)
                 privateStorage = WebViewCompat.getProfile(web).webStorage
             }
-            tab.web = web
             web.id = R.id.browser_view
             web.setBackgroundColor(paper)
+            if (tab.incognito) web.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             web.settings.apply {
                 javaScriptEnabled = true; domStorageEnabled = true
                 allowFileAccess = false; allowContentAccess = false
@@ -363,7 +364,7 @@ class BrowserActivity : AppCompatActivity() {
                 textZoom = store.prefs.getInt("textZoom", 100)
                 userAgentString = desktopAgent(tab.desktop)
             }
-            val cookies = if (tab.private) WebViewCompat.getProfile(web).cookieManager else CookieManager.getInstance()
+            val cookies = if (tab.incognito) WebViewCompat.getProfile(web).cookieManager else CookieManager.getInstance()
             cookies.setAcceptThirdPartyCookies(web, false)
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
             web.webViewClient = pageClient(tab)
@@ -376,7 +377,7 @@ class BrowserActivity : AppCompatActivity() {
                     val options = if (hit.type == WebView.HitTestResult.IMAGE_TYPE) arrayOf("Abrir em nova aba", "Copiar endereço", "Baixar imagem") else arrayOf("Abrir em nova aba", "Copiar link", "Compartilhar link")
                     dialog("Opções do link", link).setItems(options) { _, which ->
                         when (which) {
-                            0 -> newTab(link, tab.private)
+                            0 -> newTab(link, tab.incognito)
                             1 -> copy(link)
                             2 -> if (hit.type == WebView.HitTestResult.IMAGE_TYPE) confirmDownload(link, web.settings.userAgentString, null, null) else share(link)
                         }
@@ -404,24 +405,30 @@ class BrowserActivity : AppCompatActivity() {
             return true
         }
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            if (tab.home || tab.web !== view) return
             if (tab.id == activeId) cancelRequests()
             UrlPolicy.canonicalWebUrl(url.orEmpty())?.let { tab.url = it; tab.home = false }
-            tab.protectedInMemory = true
+            tab.protectedInMemory = true; tab.tlsFailed = false; tab.committed = false
+            if (tab.id == activeId) updateChrome()
+        }
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            tab.committed = true
             if (tab.id == activeId) updateChrome()
         }
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            if (tab.home || tab.web !== view) return
             UrlPolicy.canonicalWebUrl(url.orEmpty())?.let { tab.url = it }
             if (tab.id == activeId) updateChrome()
         }
         override fun onPageFinished(view: WebView, url: String?) {
-            if (clearing || tabs.none { it === tab } || tab.web !== view) return
-            if (!tab.private && UrlPolicy.isWebUrl(url) && url == tab.url) store.visit(tab.title, url!!)
+            if (clearing || tab.home || tabs.none { it === tab } || tab.web !== view) return
+            if (!tab.incognito && UrlPolicy.isWebUrl(url) && url == tab.url) store.visit(tab.title, url!!)
             if (tab.id == activeId) updateChrome()
             persist()
         }
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-            handler.cancel()
-            if (tab.id == activeId) showPageError("Conexão não segura", "O certificado deste site não pôde ser validado.", tab)
+            handler.cancel(); tab.tlsFailed = true
+            if (tab.id == activeId) { updateChrome(); showPageError("Conexão não segura", "O certificado deste site não pôde ser validado.", tab) }
         }
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (request.isForMainFrame && tab.id == activeId) showPageError("Não foi possível abrir a página", "Confira sua conexão e o endereço do site.", tab)
@@ -453,7 +460,7 @@ class BrowserActivity : AppCompatActivity() {
         override fun onReceivedTitle(view: WebView, title: String?) { tab.title = title?.take(300)?.ifBlank { "Página" } ?: "Página"; persist() }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
             if (!isUserGesture || tab.id != activeId) return false
-            val popup = newTab(private = tab.private) ?: return false
+            val popup = newTab(incognito = tab.incognito) ?: return false
             popup.home = false
             val child = createWebView(popup) ?: return false
             (resultMsg.obj as WebView.WebViewTransport).webView = child
@@ -514,11 +521,14 @@ class BrowserActivity : AppCompatActivity() {
     }
     private fun updateChrome() {
         val tab = current
+        if (tab.incognito) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val host = UrlPolicy.displayHost(tab.url)
-        address.text = if (tab.home) if (tab.private) "Navegação privada" else "Pesquisar ou digitar endereço" else host.ifBlank { "Carregando…" }
+        val hostname = host.ifBlank { "Carregando…" }
+        address.text = if (tab.home) if (tab.incognito) "Navegação privada" else "Pesquisar ou digitar endereço" else "${if (tab.incognito) "Privada · " else ""}${if (tab.url.orEmpty().startsWith("http://")) "HTTP · " else ""}$hostname"
+        address.setTextColor(if (tab.incognito) accent else ink)
         addressIcon.removeAllViews()
-        val secure = tab.url.orEmpty().startsWith("https://")
-        addressIcon.addView(icon(if (tab.home && tab.private) "private" else if (tab.home) "search" else if (secure) "lock" else "warning", 20, if (!tab.home && !secure) muted else accent), FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        val secure = tab.url.orEmpty().startsWith("https://") && tab.committed && !tab.tlsFailed && tab.web?.certificate != null
+        addressIcon.addView(icon(if (tab.home && tab.incognito) "private" else if (tab.home) "search" else if (secure) "lock" else "warning", 20, if (!tab.home && !secure) muted else accent), FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
         addressIcon.contentDescription = if (tab.home) "Pesquisa" else if (secure) "Informações da conexão HTTPS" else "Site HTTP: conexão não criptografada"
         addressIcon.clickable { if (!tab.home) showSiteInfo() else editAddress() }
         backButton.isEnabled = tab.web?.canGoBack() == true || (tab.home && tab.web != null)
@@ -547,19 +557,19 @@ class BrowserActivity : AppCompatActivity() {
             pair.forEach { (glyph, label, action) -> line.addView(actionRow(glyph, label, null, action), LinearLayout.LayoutParams(0, -2, 1f)) }
             body.addView(line)
         }
-        body.addView(actionRow("private", "Nova aba privada", null) { newTab(private = true) }.apply { background = rounded(soft, 13) }, margins(8, 0))
+        body.addView(actionRow("private", "Nova aba privada", null) { newTab(incognito = true) }.apply { background = rounded(soft, 13) }, margins(8, 0))
         presentSheet(body)
     }
     private fun showTabs() {
         val body = sheetBody("Suas abas · ${tabs.size}")
         tabs.toList().forEach { tab ->
             val line = row().apply { background = rounded(if (tab.id == activeId) tint else soft, 13); setPadding(dp(2), 0, 0, 0) }
-            line.addView(actionRow(if (tab.private) "private" else "globe", if (tab.home) "Nova aba${if (tab.private) " privada" else ""}" else tab.title, if (tab.private) "Privada" else UrlPolicy.displayHost(tab.url)) { switchTab(tab) }, LinearLayout.LayoutParams(0, -2, 1f))
+            line.addView(actionRow(if (tab.incognito) "private" else "globe", if (tab.home) "Nova aba${if (tab.incognito) " privada" else ""}" else tab.title, if (tab.incognito) "Privada" else UrlPolicy.displayHost(tab.url)) { switchTab(tab) }, LinearLayout.LayoutParams(0, -2, 1f))
             line.addView(iconButton("close", "Fechar ${tab.title}") { closeTab(tab) })
             body.addView(line, margins(6, 0))
         }
         body.addView(primaryButton("Nova aba", "plus") { newTab() }, margins(16, 0))
-        if (tabs.any { it.private }) body.addView(actionRow("private", "Fechar todas as abas privadas", null) { closePrivateTabs() })
+        if (tabs.any { it.incognito }) body.addView(actionRow("private", "Fechar todas as abas privadas", null) { closePrivateTabs() })
         presentSheet(body)
     }
     private fun showPages(key: String, label: String) {
@@ -576,7 +586,7 @@ class BrowserActivity : AppCompatActivity() {
     private fun bookmark() {
         val tab = current
         val url = tab.url?.takeIf { !tab.home && UrlPolicy.isWebUrl(it) } ?: run { toast("Abra uma página para salvar."); return }
-        if (tab.private) { dialog("Salvar fora da sessão privada?", "Este favorito ficará disponível nas abas normais.").setNegativeButton("Cancelar", null).setPositiveButton("Salvar") { _, _ -> toast(if (store.toggleBookmark(tab.title, url)) "Favorito salvo" else "Favorito removido") }.show() }
+        if (tab.incognito) { dialog("Salvar fora da sessão privada?", "Este favorito ficará disponível nas abas normais.").setNegativeButton("Cancelar", null).setPositiveButton("Salvar") { _, _ -> toast(if (store.toggleBookmark(tab.title, url)) "Favorito salvo" else "Favorito removido") }.show() }
         else toast(if (store.toggleBookmark(tab.title, url)) "Favorito salvo" else "Favorito removido")
     }
     private fun findInPage() {
@@ -595,6 +605,7 @@ class BrowserActivity : AppCompatActivity() {
     private fun showSiteInfo() {
         val url = current.url ?: return
         val origin = UrlPolicy.origin(url).orEmpty()
+        if (current.tlsFailed) { dialog("Certificado inválido", "$origin\n\nA conexão foi recusada para proteger seus dados.").setPositiveButton("Entendi", null).show(); return }
         dialog(if (origin.startsWith("https://")) "Conexão HTTPS" else "Conexão HTTP", "$origin\n\n${if (origin.startsWith("https://")) "A conexão é criptografada. Isso não garante que o conteúdo ou o responsável pelo site sejam confiáveis." else "Os dados enviados a este site não são criptografados."}\n\nCâmera, microfone e localização exigem sua autorização a cada solicitação. Cookies de terceiros ficam bloqueados.").setPositiveButton("Entendi", null).show()
     }
     private fun showSettings() {
@@ -621,7 +632,7 @@ class BrowserActivity : AppCompatActivity() {
     private fun confirmDownload(value: String, agent: String?, disposition: String?, mime: String?) {
         if (!UrlPolicy.isWebUrl(value)) { toast("Este tipo de download ainda não é compatível."); return }
         val name = URLUtil.guessFileName(value, disposition, mime).replace(Regex("[\\\\/\\p{Cntrl}]"), "_").take(160).ifBlank { "arquivo" }
-        dialog("Baixar arquivo?", "$name\n${UrlPolicy.displayHost(value)}${if (current.private) "\n\nO arquivo baixado continuará disponível depois de fechar a sessão privada." else ""}")
+        dialog("Baixar arquivo?", "$name\n${UrlPolicy.displayHost(value)}${if (current.incognito) "\n\nO arquivo baixado continuará disponível depois de fechar a sessão privada." else ""}")
             .setNegativeButton("Cancelar", null).setPositiveButton("Baixar") { _, _ ->
                 runCatching {
                     val request = DownloadManager.Request(Uri.parse(value)).setTitle(name).setDescription(UrlPolicy.displayHost(value))
@@ -690,7 +701,7 @@ class BrowserActivity : AppCompatActivity() {
         }
         runCatching { startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
     }
-    private fun updateEngine() { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))) }.onFailure { toast("Atualize o Android System WebView pela loja do seu aparelho.") } }
+    private fun updateEngine() { val provider = runCatching { WebViewCompat.getCurrentWebViewPackage(this)?.packageName }.getOrNull() ?: "com.google.android.webview"; runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$provider"))) }.onFailure { toast("Atualize o Android System WebView pela loja do seu aparelho.") } }
     private fun showEngineError() { showPageError("Motor de navegação indisponível", "Atualize ou ative o Android System WebView nas configurações do aparelho.", current, true) }
     private fun showPageError(title: String, detail: String, tab: Tab, engine: Boolean = false) {
         pageHost.removeAllViews(); progress.visibility = View.INVISIBLE
@@ -703,7 +714,8 @@ class BrowserActivity : AppCompatActivity() {
     }
     private fun privateSupported() = runCatching { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) && WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA) }.getOrDefault(false)
     private fun closePrivateTabs() {
-        val privateTabs = tabs.filter { it.private }
+        cancelRequests()
+        val privateTabs = tabs.filter { it.incognito }
         val storage = privateStorage
         privateTabs.forEach { destroy(it); tabs.remove(it) }
         privateProfile = null; privateStorage = null
