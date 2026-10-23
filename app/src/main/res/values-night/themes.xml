@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.Navegador" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#8BE1BD</item>
+        <item name="colorPrimaryVariant">#203F31</item>
+        <item name="colorSecondary">#8BE1BD</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#111918</item>
+    </style>
+</resources>

@@ -1,0 +1,6 @@
+<resources>
+    <item name="browser_view" type="id" />
+    <item name="address_input" type="id" />
+    <item name="home_screen" type="id" />
+    <item name="navigation_bar" type="id" />
+</resources>
