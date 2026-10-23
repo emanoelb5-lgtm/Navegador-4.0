@@ -433,7 +433,7 @@ class BrowserActivity : AppCompatActivity() {
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (request.isForMainFrame && tab.id == activeId) showPageError("Não foi possível abrir a página", "Confira sua conexão e o endereço do site.", tab)
         }
-        override fun onSafeBrowsingHit(view: WebView, request: WebResourceRequest, threatType: Int, callback: SafeBrowsingResponse) { callback.backToSafety(true) }
+        override fun onSafeBrowsingHit(view: WebView, request: WebResourceRequest, threatType: Int, callback: SafeBrowsingResponse) { if (Build.VERSION.SDK_INT >= 27) callback.backToSafety(true) else view.stopLoading() }
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
             val wasCurrent = activeId == tab.id
             destroy(tab)
